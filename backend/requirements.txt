@@ -1,0 +1,11 @@
+flask
+flask-socketio
+flask-sqlalchemy
+flask-cors
+eventlet
+flask
+flask-sqlalchemy
+flask-jwt-extended
+flask-bcrypt
+flask-socketio
+eventlet
