@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Socket Test</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  </head>
+  <body>
+    <button id="join" type="button">Join convo 1</button>
+    <button id="send" type="button">Send message</button>
+    <pre id="log"></pre>
+
+    <script>
+  // 1) Get token once (persist across refresh)
+  let token = localStorage.getItem("jwt_token");
+  if (!token) {
+    token = prompt("Paste JWT token:");
+    if (token) localStorage.setItem("jwt_token", token);
+  }
+
+  const logEl = document.getElementById("log");
+  const log = (x) => (logEl.textContent += x + "\n");
+
+  if (!token) {
+    log("error: No token provided. Refresh and paste a valid token.");
+  }
+
+  // 2) Connect socket (token passed in querystring)
+  const socket = io("http://127.0.0.1:5000", {
+    query: { token }
+  });
+
+  // 3) Socket listeners
+  socket.on("connect", () => log("socket connected (transport: " + socket.io.engine.transport.name + ")"));
+  socket.on("connected", (d) => log("connected: " + JSON.stringify(d)));
+  socket.on("joined_conversation", (d) => log("joined_conversation: " + JSON.stringify(d)));
+  socket.on("new_message", (d) => log("new_message: " + JSON.stringify(d)));
+  socket.on("error", (d) => log("error: " + JSON.stringify(d)));
+  socket.on("disconnect", (reason) => log("socket disconnected: " + reason));
+  socket.on("connect_error", (err) => log("connect_error: " + err.message));
+
+  // 4) Buttons (prevent any page refresh)
+  const joinBtn = document.getElementById("join");
+  const sendBtn = document.getElementById("send");
+
+  joinBtn.type = "button";
+  sendBtn.type = "button";
+
+  const CONVO_ID = 1;
+
+  joinBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    socket.emit("join_conversation", { conversation_id: CONVO_ID });
+  });
+
+  sendBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    socket.emit("send_message", {
+      conversation_id: CONVO_ID,
+      content: "Hello real-time!"
+    });
+  });
+
+  // Optional: clear token easily from console:
+  // localStorage.removeItem("jwt_token");
+</script>
+
+  </body>
+</html>

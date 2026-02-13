@@ -1,0 +1,143 @@
+Direct Messaging Chat App (Backend)
+
+This project is a WhatsApp-style **1-to-1 direct messaging backend** built with Flask.
+It focuses on clean architecture, authentication, and real-time communication,
+with the goal of supporting both web and mobile clients.
+
+
+
+Features (Current)
+
+- User registration and login
+- Secure password hashing
+- JWT-based authentication
+- Protected routes using JWT
+- SQLite database with SQLAlchemy
+- Clean, scalable backend structure
+
+
+
+Core Design Decisions
+
+- **Direct Messages only** (no public rooms)
+- One conversation per pair of users
+- Backend-first approach
+- Same backend will power:
+  - Web app (HTML/CSS/JS)
+  - Mobile app (later)
+
+
+
+Tech Stack
+
+- Python
+- Flask
+- SQLAlchemy
+- SQLite
+- JWT (PyJWT)
+- Werkzeug (password hashing)
+- Socket.IO (planned)
+
+
+
+Project Structure
+
+backend/
+├── app.py
+├── config.py
+├── extensions.py
+│
+├── models/
+│ └── user.py
+│
+├── routes/
+│ └── auth.py
+│
+└── chat.db
+
+
+
+
+
+Authentication Endpoints
+
+* Register
+
+POST /auth/register
+Body:
+{
+"username": "john",
+"password": "secret123"
+}
+
+
+* Login
+
+POST /auth/login
+Body:
+{
+"username": "john",
+"password": "secret123"
+}
+
+
+* Response 
+
+{
+"token": "<JWT_TOKEN>",
+"user_id": 1
+}
+
+
+
+The token must be sent in the `Authorization` header for protected routes:
+
+
+
+
+Authorization : Bearer <JWT_TOKEN>
+
+
+
+
+
+Current Status
+
+Authentication is fully implemented and working.
+
+The next phase is building:
+- Conversations
+- Messages
+- Real-time messaging with Socket.IO
+
+
+
+Planned Features
+
+- Conversation model (1-to-1 chats)
+- Message persistence
+- Real-time messaging
+- Online/offline presence
+- Web frontend
+- Mobile app (using same backend)
+
+
+
+Author - Samuel Koomson
+
+Built as a learning-focused, production-style project
+to understand real-time systems, backend architecture,
+and scalable app design.
+
+
+
+
+
+
+
+
+
+
+
+
+
