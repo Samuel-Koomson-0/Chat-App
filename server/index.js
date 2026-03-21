@@ -52,7 +52,35 @@ io.on('connection', (socket) => {
   console.log(`${username} connected`);
 
   onlineUsers.set(userId, socket.id);
-  io.emit('online_users', Array.from(onlineUsers.keys()));
+io.emit('online_users', Array.from(onlineUsers.keys()));
+
+// Send current online users directly to the newly connected socket
+socket.emit('online_users', Array.from(onlineUsers.keys()));
+
+
+  socket.on('typing', ({ to, isTyping }) => {
+  const recipientSocket = onlineUsers.get(to);
+  if (recipientSocket) {
+    io.to(recipientSocket).emit('typing', { from: userId, isTyping });
+  }
+});
+
+
+socket.on('mark_read', ({ from }) => {
+  // Mark all messages from 'from' to current user as read
+  const unread = queries.getUnreadMessages.all(from, userId);
+  queries.markMessagesAsRead.run(from, userId);
+
+  // Notify the sender that their messages were read
+  const senderSocket = onlineUsers.get(from);
+  if (senderSocket && unread.length > 0) {
+    io.to(senderSocket).emit('messages_read', {
+      by: userId,
+      messageIds: unread.map(m => m.id)
+    });
+  }
+});
+
 
   socket.on('private_message', ({ to, content }) => {
     if (!content?.trim()) return;

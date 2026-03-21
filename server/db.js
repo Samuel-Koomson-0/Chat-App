@@ -19,6 +19,7 @@ db.exec(`
     sender_id INTEGER NOT NULL,
     receiver_id INTEGER NOT NULL,
     content TEXT NOT NULL,
+    is_read INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sender_id) REFERENCES users(id),
     FOREIGN KEY (receiver_id) REFERENCES users(id)
@@ -41,7 +42,15 @@ const queries = {
        OR (m.sender_id = ? AND m.receiver_id = ?)
     ORDER BY m.created_at ASC
     LIMIT 100
-  `)
+  `),
+  markMessagesAsRead: db.prepare(`
+  UPDATE messages SET is_read = 1
+  WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
+`),
+getUnreadMessages: db.prepare(`
+  SELECT id FROM messages
+  WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
+`)
 };
 
 module.exports = { db, queries };

@@ -1,9 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Chat from './pages/Chat';
-import { connectSocket } from './socket';
+import { connectSocket, getSocket } from './socket';
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem('token');
@@ -11,12 +11,38 @@ function PrivateRoute({ children }) {
 }
 
 export default function App() {
+  const [socketReady, setSocketReady] = useState(false);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      connectSocket(token);
+    if (!token) {
+      setSocketReady(true);
+      return;
     }
+
+    const existing = getSocket();
+    if (existing && existing.connected) {
+      setSocketReady(true);
+      return;
+    }
+
+    const socket = connectSocket(token);
+
+    socket.on('connect', () => {
+      setSocketReady(true);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
+      setSocketReady(true);
+    });
+
+    // Fallback in case connect event already fired
+    if (socket.connected) setSocketReady(true);
+
   }, []);
+
+  if (!socketReady) return null;
 
   return (
     <BrowserRouter>

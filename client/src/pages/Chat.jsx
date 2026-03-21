@@ -10,8 +10,11 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [search, setSearch] = useState('');
+  const [typingUsers, setTypingUsers] = useState({});
+  const [unreadCounts, setUnreadCounts] = useState({});
   const messagesEndRef = useRef(null);
   const selectedUserRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
   const navigate = useNavigate();
 
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -34,26 +37,57 @@ export default function Chat() {
 
     const handleMessage = (msg) => {
       const selected = selectedUserRef.current;
-      if (!selected) return;
-      const isRelevant =
-        (Number(msg.sender_id) === currentUserId && Number(msg.receiver_id) === Number(selected.id)) ||
-        (Number(msg.sender_id) === Number(selected.id) && Number(msg.receiver_id) === currentUserId);
-      if (isRelevant) {
+      const senderId = Number(msg.sender_id);
+
+      if (senderId === currentUserId) {
         setMessages(prev => {
           if (prev.find(m => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
+        return;
+      }
+
+      if (selected && senderId === Number(selected.id)) {
+        setMessages(prev => {
+          if (prev.find(m => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+        setTypingUsers(prev => ({ ...prev, [senderId]: false }));
+
+        // Mark as read immediately since conversation is open
+        socket.emit('mark_read', { from: senderId });
+      } else {
+        setUnreadCounts(prev => ({
+          ...prev,
+          [senderId]: (prev[senderId] || 0) + 1
+        }));
       }
     };
 
     const handleOnlineUsers = (ids) => setOnlineUsers(ids.map(Number));
 
+    const handleTyping = ({ from, isTyping }) => {
+      setTypingUsers(prev => ({ ...prev, [from]: isTyping }));
+    };
+
+    const handleMessagesRead = ({  messageIds }) => {
+      setMessages(prev =>
+        prev.map(m =>
+          messageIds.includes(m.id) ? { ...m, is_read: 1 } : m
+        )
+      );
+    };
+
     socket.on('private_message', handleMessage);
     socket.on('online_users', handleOnlineUsers);
+    socket.on('typing', handleTyping);
+    socket.on('messages_read', handleMessagesRead);
 
     return () => {
       socket.off('private_message', handleMessage);
       socket.off('online_users', handleOnlineUsers);
+      socket.off('typing', handleTyping);
+      socket.off('messages_read', handleMessagesRead);
     };
   }, [currentUserId]);
 
@@ -61,6 +95,11 @@ export default function Chat() {
     setSelectedUser(user);
     selectedUserRef.current = user;
     setMessages([]);
+    setUnreadCounts(prev => ({ ...prev, [user.id]: 0 }));
+
+    const socket = getSocket();
+    if (socket) socket.emit('mark_read', { from: Number(user.id) });
+
     try {
       const { data } = await axios.get(
         `http://localhost:3001/api/messages/${user.id}`,
@@ -72,11 +111,29 @@ export default function Chat() {
     }
   }, [token]);
 
+  const goBack = () => {
+    setSelectedUser(null);
+    selectedUserRef.current = null;
+    setMessages([]);
+  };
+
   const sendMessage = () => {
     const socket = getSocket();
     if (!socket || !input.trim() || !selectedUser) return;
     socket.emit('private_message', { to: Number(selectedUser.id), content: input.trim() });
+    socket.emit('typing', { to: Number(selectedUser.id), isTyping: false });
     setInput('');
+  };
+
+  const handleInputChange = (e) => {
+    setInput(e.target.value);
+    const socket = getSocket();
+    if (!socket || !selectedUser) return;
+    socket.emit('typing', { to: Number(selectedUser.id), isTyping: true });
+    clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('typing', { to: Number(selectedUser.id), isTyping: false });
+    }, 2000);
   };
 
   const handleKeyDown = (e) => {
@@ -101,6 +158,16 @@ export default function Chat() {
   });
 
   const isOnline = (userId) => onlineUsers.includes(Number(userId));
+  const isTyping = (userId) => typingUsers[Number(userId)] === true;
+
+  const renderTicks = (msg) => {
+    const mine = Number(msg.sender_id) === currentUserId;
+    if (!mine) return null;
+    if (msg.is_read) {
+      return <span style={s.ticksRead}>✓✓</span>;
+    }
+    return <span style={s.ticksSent}>✓</span>;
+  };
 
   return (
     <div style={s.layout}>
@@ -126,24 +193,35 @@ export default function Chat() {
           {filteredUsers.length === 0 && (
             <div style={s.emptyUsers}>No users found</div>
           )}
-          {filteredUsers.map(user => (
-            <div
-              key={user.id}
-              style={{
-                ...s.userItem,
-                background: selectedUser?.id === user.id ? '#252530' : 'transparent',
-              }}
-              onClick={() => selectUser(user)}
-            >
-              <div style={s.avatarSm}>{user.username[0].toUpperCase()}</div>
-              <div style={s.userInfo}>
-                <span style={s.userName}>{user.username}</span>
-                <span style={{ ...s.status, color: isOnline(user.id) ? '#4ade80' : '#555' }}>
-                  {isOnline(user.id) ? '● Online' : '○ Offline'}
-                </span>
+          {filteredUsers.map(user => {
+            const unread = unreadCounts[user.id] || 0;
+            return (
+              <div
+                key={user.id}
+                style={{
+                  ...s.userItem,
+                  background: selectedUser?.id === user.id ? '#252530' : 'transparent',
+                }}
+                onClick={() => selectUser(user)}
+              >
+                <div style={{ position: 'relative' }}>
+                  <div style={s.avatarSm}>{user.username[0].toUpperCase()}</div>
+                  {isOnline(user.id) && <div style={s.greenDot} />}
+                </div>
+                <div style={{ ...s.userInfo, flex: 1 }}>
+                  <span style={s.userName}>{user.username}</span>
+                  {isTyping(user.id) ? (
+                    <span style={{ ...s.status, color: '#818cf8' }}>✎ typing...</span>
+                  ) : unread > 0 ? (
+                    <span style={s.unreadText}>
+                      {unread > 9 ? '9+ new messages' : unread === 1 ? '1 new message' : `${unread} new messages`}
+                    </span>
+                  ) : null}
+                </div>
+                {unread > 0 && <div style={s.unreadDot} />}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </aside>
 
@@ -157,12 +235,18 @@ export default function Chat() {
         ) : (
           <>
             <div style={s.chatHeader}>
-              <div style={s.avatarSm}>{selectedUser.username[0].toUpperCase()}</div>
+              <button onClick={goBack} style={s.backBtn} title="Back">←</button>
+              <div style={{ position: 'relative' }}>
+                <div style={s.avatarSm}>{selectedUser.username[0].toUpperCase()}</div>
+                {isOnline(selectedUser.id) && <div style={s.greenDot} />}
+              </div>
               <div>
                 <div style={s.chatName}>{selectedUser.username}</div>
-                <div style={{ fontSize: 12, color: isOnline(selectedUser.id) ? '#4ade80' : '#555' }}>
-                  {isOnline(selectedUser.id) ? 'Online' : 'Offline'}
-                </div>
+                {(isTyping(selectedUser.id) || isOnline(selectedUser.id)) && (
+                  <div style={{ fontSize: 12, color: isTyping(selectedUser.id) ? '#818cf8' : '#4ade80' }}>
+                    {isTyping(selectedUser.id) ? '✎ typing...' : 'Online'}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -183,8 +267,9 @@ export default function Chat() {
                       }}>
                         {msg.content}
                       </div>
-                      <div style={{ ...s.time, textAlign: mine ? 'right' : 'left' }}>
+                      <div style={{ ...s.time, textAlign: mine ? 'right' : 'left', display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', alignItems: 'center', gap: 4 }}>
                         {formatTime(msg.created_at)}
+                        {renderTicks(msg)}
                       </div>
                     </div>
                   </div>
@@ -198,7 +283,7 @@ export default function Chat() {
                 style={s.msgInput}
                 placeholder={`Message ${selectedUser.username}...`}
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
               />
               <button
@@ -243,9 +328,25 @@ const s = {
   },
   myName: { fontSize: 14, fontWeight: 600, color: '#e8e8e8' },
   onlineDot: { fontSize: 11, color: '#4ade80' },
+  greenDot: {
+    position: 'absolute', bottom: 1, right: 1,
+    width: 11, height: 11, borderRadius: '50%',
+    background: '#4ade80', border: '2px solid #13131a',
+  },
+  unreadText: {
+    fontSize: 12, fontWeight: 600, color: '#818cf8', marginTop: 2,
+  },
+  unreadDot: {
+    width: 10, height: 10, borderRadius: '50%',
+    background: '#6366f1', flexShrink: 0, alignSelf: 'center',
+  },
   logoutBtn: {
     marginLeft: 'auto', background: 'none', color: '#555',
     fontSize: 18, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
+  },
+  backBtn: {
+    background: 'none', color: '#a0a0c0', fontSize: 22,
+    padding: '4px 10px', borderRadius: 8, cursor: 'pointer', marginRight: 4,
   },
   search: {
     width: '100%', background: '#0f0f10', border: '1px solid #1e1e2e',
@@ -280,6 +381,8 @@ const s = {
   msgRow: { display: 'flex', alignItems: 'flex-end' },
   bubble: { padding: '10px 14px', fontSize: 14, lineHeight: 1.5, color: '#f0f0f0', wordBreak: 'break-word' },
   time: { fontSize: 11, color: '#3a3a50', marginTop: 3, paddingInline: 2 },
+  ticksSent: { fontSize: 11, color: '#555' },
+  ticksRead: { fontSize: 11, color: '#6366f1' },
   inputBar: {
     padding: '12px 16px', borderTop: '1px solid #1e1e2e',
     display: 'flex', gap: 10, alignItems: 'center', background: '#13131a',
