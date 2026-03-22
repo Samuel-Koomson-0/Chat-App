@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Chat from './pages/Chat';
+import Settings from './pages/Settings';
 import { connectSocket, getSocket } from './socket';
 
 function PrivateRoute({ children }) {
@@ -15,31 +16,15 @@ export default function App() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token) {
-      setSocketReady(true);
-      return;
-    }
+    if (!token) { setSocketReady(true); return; }
 
     const existing = getSocket();
-    if (existing && existing.connected) {
-      setSocketReady(true);
-      return;
-    }
+    if (existing && existing.connected) { setSocketReady(true); return; }
 
     const socket = connectSocket(token);
-
-    socket.on('connect', () => {
-      setSocketReady(true);
-    });
-
-    socket.on('connect_error', (err) => {
-      console.error('Socket connection error:', err.message);
-      setSocketReady(true);
-    });
-
-    // Fallback in case connect event already fired
+    socket.on('connect', () => setSocketReady(true));
+    socket.on('connect_error', () => setSocketReady(true));
     if (socket.connected) setSocketReady(true);
-
   }, []);
 
   if (!socketReady) return null;
@@ -50,6 +35,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/chat" element={<PrivateRoute><Chat /></PrivateRoute>} />
+        <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>
     </BrowserRouter>

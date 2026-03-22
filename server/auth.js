@@ -81,4 +81,101 @@ function authenticateToken(req, res, next) {
   });
 }
 
+// Update username
+router.put('/update-username', authenticateToken, (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username || username.trim().length < 2)
+      return res.status(400).json({ error: 'Username must be at least 2 characters' });
+
+    const existing = queries.findUserByUsername.get(username.trim());
+    if (existing && existing.id !== req.user.userId)
+      return res.status(409).json({ error: 'Username already taken' });
+
+    queries.updateUsername.run(username.trim(), req.user.userId);
+    const updatedUser = queries.findUserById.get(req.user.userId);
+    res.json({ user: updatedUser });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update password
+router.put('/update-password', authenticateToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword)
+      return res.status(400).json({ error: 'Both fields are required' });
+
+    if (newPassword.length < 6)
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+
+    const user = queries.findUserById.get(req.user.userId);
+    const fullUser = queries.findUserByEmail.get(user.email);
+    const valid = await bcrypt.compare(currentPassword, fullUser.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    queries.updatePassword.run(hash, req.user.userId);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete account
+router.delete('/delete-account', authenticateToken, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password required' });
+
+    const user = queries.findUserById.get(req.user.userId);
+    const fullUser = queries.findUserByEmail.get(user.email);
+    const valid = await bcrypt.compare(password, fullUser.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+
+    const id = req.user.userId;
+    queries.deleteUserMessages.run(id, id);
+    queries.deleteUserContacts.run(id, id);
+    queries.deleteUserRequests.run(id, id);
+    queries.deleteUser.run(id);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
+// Get preferences
+router.get('/preferences', authenticateToken, (req, res) => {
+  try {
+    const prefs = queries.getPreferences.get(req.user.userId);
+    res.json(prefs);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update preferences
+router.put('/preferences', authenticateToken, (req, res) => {
+  try {
+    const { avatar_color, dark_mode, sound_on } = req.body;
+    queries.updatePreferences.run(
+      avatar_color ?? 0,
+      dark_mode ? 1 : 0,
+      sound_on ? 1 : 0,
+      req.user.userId
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = { router, authenticateToken, JWT_SECRET };
